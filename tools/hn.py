@@ -41,7 +41,7 @@ def search_hn(query: str, crawl_urls: bool) -> str:
             comment = comments_response.json()["hits"][0]['comment_text']
             
             result += f"\tComment: {comment}\n"
-    return result
+    return result if result != "" else "Nothing found"
 
 
 class HackerNewsSearchTool(ToolInterface):

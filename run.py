@@ -7,7 +7,7 @@ if __name__ == "__main__":
     # build ask for prompt
     # run prompt
     prompt = input("Enter a question / task for the agent: ")
-    agent = Agent(llm=ChatGPT(), tools=[HackerNewsSearchTool(crawl_urls=True)])
+    agent = Agent(llm=ChatGPT(), tools=[HackerNewsSearchTool(crawl_urls=True), SerpAPITool()])
     result = agent.run(prompt)
 
     print(f"Final answer is {result}")

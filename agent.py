@@ -10,26 +10,29 @@ from tools.python_repl import PythonREPLTool
 
 FINAL_ANSWER_TOKEN = "Final Answer:"
 OBSERVATION_TOKEN = "Observation:"
-THOUGHT_TOKEN = "Thought:"
+THOUGHT_TOKEN = "Orientation:"
 PROMPT_TEMPLATE = """Today is {today} and you can use tools to get new information. Answer the question as best as you can using the following tools: 
 
 {tool_description}
+None: No actions needed
 
-You will answer the question using the following format:
+You are not given a goal but should create and alter a goal based on the previous actions you have taken. You will answer using the following format:
 
 Question: the input question you must answer
-Thought: comment on what you want to do next
-Action: the action to take, exactly one element of [{tool_names}]
+Observation: comment of what to do next 
+Orientation: orient the goal based on the observation
+Action: the action to take, exactly one element of [None,{tool_names}]
 Action Input: the input to the action
-Observation: the result of the action
-... (this Thought/Action/Action Input/Observation repeats N times, use it until you are sure of the answer)
-Thought: I now know the final answer
+Observation: comment of what to do next based on the result of the action and the collection of information from previous actions
+Orientation: refine the goal based on the observation
+... (this Observation/Orientation/Action Input/Observation repeats N times, use it until you are sure of the answer)
+Observation: I now know the final answer
 Final Answer: your final answer to the original input question
 
 Begin!
 
 Question: {question}
-Thought: {previous_responses}
+Observation: {previous_responses}
 """
 
 
@@ -68,12 +71,18 @@ class Agent(BaseModel):
             num_loops += 1
             curr_prompt = prompt.format(previous_responses='\n'.join(previous_responses))
             generated, tool, tool_input = self.decide_next_action(curr_prompt)
-            if tool == 'Final Answer':
-                return tool_input
-            if tool not in self.tool_by_names:
-                raise ValueError(f"Unknown tool: {tool}")
-            tool_result = self.tool_by_names[tool].use(tool_input)
-            generated += f"\n{OBSERVATION_TOKEN} {tool_result}\n{THOUGHT_TOKEN}"
+            # print("======DEBUG=====")
+            # print("generated:", generated)
+            # print("tool:", tool)
+            # print("tool_input:", tool_input)
+            tool_result = None
+            if tool is not None:
+                if tool == 'Final Answer':
+                    return tool_input
+                if tool not in self.tool_by_names:
+                    raise ValueError(f"Unknown tool: {tool}")
+                tool_result = self.tool_by_names[tool].use(tool_input)
+            generated += f"\n{OBSERVATION_TOKEN} {tool_result if tool_result is not None else ''}\n{THOUGHT_TOKEN}"
             print(generated)
             previous_responses.append(generated)
 
@@ -83,15 +92,21 @@ class Agent(BaseModel):
         return generated, tool, tool_input
 
     def _parse(self, generated: str) -> Tuple[str, str]:
-        if FINAL_ANSWER_TOKEN in generated:
-            return "Final Answer", generated.split(FINAL_ANSWER_TOKEN)[-1].strip()
-        regex = r"Action: [\[]?(.*?)[\]]?[\n]*Action Input:[\s]*(.*)"
-        match = re.search(regex, generated, re.DOTALL)
+        if "final" in generated.lower() and "answer" in generated.lower():
+            return "Final Answer", generated.strip()
+        action_regex = r"Action: [\[]?(.*?)[\]]?"
+        match = re.search(action_regex, generated, re.DOTALL)
         if not match:
             raise ValueError(f"Output of LLM is not parsable for next tool use: `{generated}`")
         tool = match.group(1).strip()
-        tool_input = match.group(2)
-        return tool, tool_input.strip(" ").strip('"')
+        if tool == "None":
+            return None, None
+        input_regex = r"Action Input:[\s]*(.*)"
+        match = re.search(input_regex, generated, re.DOTALL)
+        if not match:
+            raise ValueError(f"Output of LLM is not parsable for next tool use: `{generated}`")
+        tool_input = match.group(1).strip(" ").strip('"')
+        return tool, tool_input
 
 
 if __name__ == '__main__':
